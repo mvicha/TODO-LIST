@@ -24,7 +24,7 @@
     </hudson.model.ParametersDefinitionProperty>
   </properties>
   <definition class="org.jenkinsci.plugins.workflow.cps.CpsFlowDefinition" plugin="workflow-cps@2.87">
-    <script>String gitRepo = &quot;ssh://git-codecommit.us-east-1.amazonaws.com/v1/repos/python-env&quot;
+    <script>String gitRepo = &quot;codecommit_python_env&quot;
 String branchName = &quot;master&quot;
 String ecrDest = &quot;dkr_python_env_url&quot;
 String credentialsId = &quot;${env.CODECOMMIT_ID}&quot;
