@@ -1,0 +1,115 @@
+<?xml version='1.1' encoding='UTF-8'?>
+<flow-definition plugin="workflow-job@2.40">
+  <actions/>
+  <description></description>
+  <keepDependencies>false</keepDependencies>
+  <properties>
+    <hudson.model.ParametersDefinitionProperty>
+      <parameterDefinitions>
+        <hudson.model.StringParameterDefinition>
+          <name>CODECOMMIT_ID</name>
+          <description></description>
+          <defaultValue>codecommit</defaultValue>
+          <trim>false</trim>
+        </hudson.model.StringParameterDefinition>
+        <hudson.model.StringParameterDefinition>
+          <name>GIT_REPO</name>
+          <description></description>
+          <defaultValue>codecommit_todo_list_repo</defaultValue>
+          <trim>false</trim>
+        </hudson.model.StringParameterDefinition>
+      </parameterDefinitions>
+    </hudson.model.ParametersDefinitionProperty>
+  </properties>
+  <definition class="org.jenkinsci.plugins.workflow.cps.CpsFlowDefinition" plugin="workflow-cps@2.87">
+    <script>def cloneGit(branchName) {
+  stage(&quot;Clone ${branchName} Repo&quot;) {
+    // Limpiamos el entorno antes de comenzar
+    deleteDir()
+    git branch: branchName,
+      credentialsId: &quot;${env.CODECOMMIT_ID}&quot;,
+      url: &quot;${env.GIT_REPO}&quot;
+  }
+}
+
+def configGit(gitUsername, gitEmail) {
+  stage(&apos;Config git globals&apos;) {
+    sh(&quot;&quot;&quot;
+      git config user.name &apos;${gitUsername}&apos;
+      git config user.email &apos;${gitEmail}&apos;
+    &quot;&quot;&quot;)
+  }
+}
+
+def buildJob(jobName) {
+  stage(&quot;Build ${jobName}&quot;) {
+    def job = build job: jobName
+  }
+}
+def mergeGit(origin, dest) {
+  stage(&quot;Merge ${origin} into ${dest}&quot;) {
+    sh(&quot;&quot;&quot;
+      git merge origin/${origin}
+      git branch --set-upstream-to=origin/${dest} ${dest}
+    &quot;&quot;&quot;)
+  }
+}
+def pushGit(origin) {
+  stage(&quot;Push ${origin} merged changes&quot;) {
+    withCredentials([sshUserPrivateKey(credentialsId: &apos;codecommit&apos;, keyFileVariable: &apos;SSH_KEY&apos;, usernameVariable: &apos;SSH_USERNAME&apos;)]) {
+      withEnv([&quot;GIT_SSH_COMMAND=ssh -o StrictHostKeyChecking=no -o User=${SSH_USERNAME} -i ${SSH_KEY}&quot;]) {
+        sh &quot;git push origin ${origin}&quot;
+      }
+    }
+  }
+}
+
+node {
+  try {
+    /*
+      Clonamos dev para configurar
+    */
+    cloneGit(&apos;staging&apos;)
+
+    /*
+      Configuramos git para que utilice un nombre de usuario y un email
+    */
+    configGit(&apos;Jenkins Pipeline&apos;, &apos;jenkins@pipeline.com&apos;)
+
+    /*
+      Comenzamos con la construcción del pipeline de staging
+    */
+    buildJob(&apos;PIPELINE-FULL-STAGING&apos;)
+
+    /*
+        Habiendo finalizado Staging correctamente clonamos, mergeamos y pusheamos a producción
+    */
+    // Clonamos
+    cloneGit(&apos;master&apos;)
+    // Mergeamos
+    mergeGit(&apos;staging&apos;, &apos;master&apos;)
+    // Pusheamos
+    pushGit(&apos;master&apos;)
+
+    /*
+      Habiendo mergeado correctamente comenzamos con la construcción del pipeline de producción
+    */
+    buildJob(&apos;PIPELINE-FULL-PRODUCTION&apos;)
+  } catch(e) {
+    println &quot;Failed because of $e&quot;
+    currentBuid.result = &quot;FAILURE&quot;
+  } finally {
+    /*
+      Limpiamos el entorno al finalizar
+    */
+    stage(&apos;Cleanup&apos;) {
+      deleteDir()
+    }
+  }
+}
+</script>
+    <sandbox>true</sandbox>
+  </definition>
+  <triggers/>
+  <disabled>false</disabled>
+</flow-definition>

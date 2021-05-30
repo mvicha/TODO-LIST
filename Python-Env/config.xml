@@ -1,0 +1,67 @@
+<?xml version='1.1' encoding='UTF-8'?>
+<flow-definition plugin="workflow-job@2.40">
+  <actions>
+    <org.jenkinsci.plugins.pipeline.modeldefinition.actions.DeclarativeJobAction plugin="pipeline-model-definition@1.8.4"/>
+    <org.jenkinsci.plugins.pipeline.modeldefinition.actions.DeclarativeJobPropertyTrackerAction plugin="pipeline-model-definition@1.8.4">
+      <jobProperties/>
+      <triggers/>
+      <parameters/>
+      <options/>
+    </org.jenkinsci.plugins.pipeline.modeldefinition.actions.DeclarativeJobPropertyTrackerAction>
+  </actions>
+  <description>Este pipeline se utiliza para crear una imágen de docker y utilizarla en otros pipelines de Jenkins. Contiene docker, awscli, sam-cli, python3.8, curl y otras utilidades</description>
+  <keepDependencies>false</keepDependencies>
+  <properties>
+    <hudson.model.ParametersDefinitionProperty>
+      <parameterDefinitions>
+        <hudson.model.StringParameterDefinition>
+          <name>CODECOMMIT_ID</name>
+          <description></description>
+          <defaultValue>codecommit</defaultValue>
+          <trim>false</trim>
+        </hudson.model.StringParameterDefinition>
+      </parameterDefinitions>
+    </hudson.model.ParametersDefinitionProperty>
+  </properties>
+  <definition class="org.jenkinsci.plugins.workflow.cps.CpsFlowDefinition" plugin="workflow-cps@2.87">
+    <script>String gitRepo = &quot;ssh://git-codecommit.us-east-1.amazonaws.com/v1/repos/python-env&quot;
+String branchName = &quot;master&quot;
+String ecrDest = &quot;dkr_python_env_url&quot;
+String credentialsId = &quot;${env.CODECOMMIT_ID}&quot;
+
+
+pipeline {
+  agent any
+
+  stages {
+    stage(&apos;Clean&apos;) {
+      steps {
+        deleteDir()
+        sh &apos;printenv&apos;
+      }
+    }
+  
+    stage(&apos;Checkout&apos;) {
+      steps {
+        git branch: branchName,
+          credentialsId: &quot;${credentialsId}&quot;,
+          url: &quot;${gitRepo}&quot;
+      }
+    }
+
+    stage(&apos;Build docker image&apos;) {
+      steps {
+        sh(&quot;&quot;&quot;
+            docker image build -t ${ecrDest} .
+            docker image push ${ecrDest}
+        &quot;&quot;&quot;)
+      }
+    }
+  }
+}
+</script>
+    <sandbox>true</sandbox>
+  </definition>
+  <triggers/>
+  <disabled>false</disabled>
+</flow-definition>
