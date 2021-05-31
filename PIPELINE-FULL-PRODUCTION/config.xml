@@ -27,7 +27,19 @@
           <trim>false</trim>
         </hudson.model.StringParameterDefinition>
         <hudson.model.StringParameterDefinition>
-          <name>S3BUCKET_NAME</name>
+          <name>DEVELOP_S3BUCKET_NAME</name>
+          <description></description>
+          <defaultValue>develop_bucket_name</defaultValue>
+          <trim>false</trim>
+        </hudson.model.StringParameterDefinition>
+        <hudson.model.StringParameterDefinition>
+          <name>STAGING_S3BUCKET_NAME</name>
+          <description></description>
+          <defaultValue>staging_bucket_name</defaultValue>
+          <trim>false</trim>
+        </hudson.model.StringParameterDefinition>
+        <hudson.model.StringParameterDefinition>
+          <name>PRODUCTION_S3BUCKET_NAME</name>
           <description></description>
           <defaultValue>production_bucket_name</defaultValue>
           <trim>false</trim>
