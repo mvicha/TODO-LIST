@@ -29,7 +29,7 @@
         <hudson.model.StringParameterDefinition>
           <name>GIT_REPO</name>
           <description></description>
-          <defaultValue>codecommit_python_env</defaultValue>
+          <defaultValue>codecommit_python_env_url</defaultValue>
           <trim>false</trim>
         </hudson.model.StringParameterDefinition>
         <hudson.model.StringParameterDefinition>
