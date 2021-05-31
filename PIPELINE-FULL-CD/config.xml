@@ -56,7 +56,7 @@ def mergeGit(origin, dest) {
 }
 def pushGit(origin) {
   stage(&quot;Push ${origin} merged changes&quot;) {
-    withCredentials([sshUserPrivateKey(credentialsId: &apos;codecommit&apos;, keyFileVariable: &apos;SSH_KEY&apos;, usernameVariable: &apos;SSH_USERNAME&apos;)]) {
+    withCredentials([sshUserPrivateKey(credentialsId: &apos;${env.CODECOMMIT_ID}&apos;, keyFileVariable: &apos;SSH_KEY&apos;, usernameVariable: &apos;SSH_USERNAME&apos;)]) {
       withEnv([&quot;GIT_SSH_COMMAND=ssh -o StrictHostKeyChecking=no -o User=${SSH_USERNAME} -i ${SSH_KEY}&quot;]) {
         sh &quot;git push origin ${origin}&quot;
       }
