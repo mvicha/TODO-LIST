@@ -29,7 +29,7 @@
         <hudson.model.StringParameterDefinition>
           <name>S3BUCKET_NAME</name>
           <description></description>
-          <defaultValue>production_bucket_name</defaultValue>
+          <defaultValue>staging_bucket_name</defaultValue>
           <trim>false</trim>
         </hudson.model.StringParameterDefinition>
       </parameterDefinitions>
