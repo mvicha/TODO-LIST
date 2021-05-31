@@ -1,23 +1,19 @@
 <?xml version='1.1' encoding='UTF-8'?>
 <flow-definition plugin="workflow-job@2.40">
-  <actions/>
+  <actions>
+    <org.jenkinsci.plugins.pipeline.modeldefinition.actions.DeclarativeJobAction plugin="pipeline-model-definition@1.8.4"/>
+    <org.jenkinsci.plugins.pipeline.modeldefinition.actions.DeclarativeJobPropertyTrackerAction plugin="pipeline-model-definition@1.8.4">
+      <jobProperties/>
+      <triggers/>
+      <parameters/>
+      <options/>
+    </org.jenkinsci.plugins.pipeline.modeldefinition.actions.DeclarativeJobPropertyTrackerAction>
+  </actions>
   <description></description>
   <keepDependencies>false</keepDependencies>
   <properties>
     <hudson.model.ParametersDefinitionProperty>
       <parameterDefinitions>
-        <hudson.model.StringParameterDefinition>
-          <name>CODECOMMIT_ID</name>
-          <description></description>
-          <defaultValue>codecommit</defaultValue>
-          <trim>false</trim>
-        </hudson.model.StringParameterDefinition>
-        <hudson.model.StringParameterDefinition>
-          <name>GIT_REPO</name>
-          <description></description>
-          <defaultValue>codecommit_todo_list_repo</defaultValue>
-          <trim>false</trim>
-        </hudson.model.StringParameterDefinition>
         <hudson.model.StringParameterDefinition>
           <name>ECR_PYTHON</name>
           <description></description>
@@ -25,367 +21,46 @@
           <trim>false</trim>
         </hudson.model.StringParameterDefinition>
         <hudson.model.StringParameterDefinition>
+          <name>ENVIRONMENT</name>
+          <description></description>
+          <defaultValue>staging</defaultValue>
+          <trim>false</trim>
+        </hudson.model.StringParameterDefinition>
+        <hudson.model.StringParameterDefinition>
           <name>S3BUCKET_NAME</name>
           <description></description>
-          <defaultValue>staging_bucket_name</defaultValue>
+          <defaultValue>production_bucket_name</defaultValue>
           <trim>false</trim>
         </hudson.model.StringParameterDefinition>
       </parameterDefinitions>
     </hudson.model.ParametersDefinitionProperty>
   </properties>
-  <definition class="org.jenkinsci.plugins.workflow.cps.CpsFlowDefinition" plugin="workflow-cps@2.87">
-    <script>import java.time.*
-
-/*
-  Generamos un valor timeInSeconds para darles un nombre único a los recursos
-*/
-Date now = new Date()
-Integer timeInSeconds = now.getTime()
-if (timeInSeconds &lt; 0) {
-  println(&quot;Time is lower than 0: &quot; + timeInSeconds.toString())
-  timeInSeconds = (timeInSeconds * -1)
-  println(&quot;Fixed Time is now: &quot; + timeInSeconds.toString())
-}
-
-
-/*
-  Setear ENVIRONMENT. Podría ser pasador como parámetros del pipeline
-*/
-String ENVIRONMENT = 'staging'
-
-
-/*
-  Definir valores en base al branch:
-    - s3bucket: Bucket que se utiliza para guardar los archivos de SAM
-    - doLocal: Utilizado para validar ejecución en entorno local
-    - doTests: Utilizado para validar realización de pruebas
-    - stackName: Utilizado para darle un nombre al stack de CloudFormation
-*/
-if (&quot;${ENVIRONMENT}&quot; == &quot;develop&quot;) {
-  s3bucket = &quot;${S3BUCKET_NAME}&quot;
-  doLocal = false
-  doTests = true
-  stackName = &quot;dev&quot;
-} else if (&quot;${ENVIRONMENT}&quot; == &quot;staging&quot;) {
-  s3bucket = &quot;${S3BUCKET_NAME}&quot;
-  doLocal = false
-  doTests = true
-  stackName = &quot;stg&quot;
-} else if (&quot;${ENVIRONMENT}&quot; == &quot;master&quot;) {
-  s3bucket = &quot;${S3BUCKET_NAME}&quot;
-  doLocal = false
-  doTests = false
-  stackName = &quot;prod&quot;
-} else {
-  doLocal = true
-  doTests = true
-  stackName = &quot;local&quot;
-}
-
-
-/*
-  Esta función limpia el entorno.
-    - debugenv: Utilizado para imprimir información acerca del entorno
-*/
-def cleanUp(debugenv) {
-  stage(&apos;Clean&apos;) {
-    deleteDir()
-    if (debugenv) {
-      sh &apos;printenv&apos;
-    }
-  }
-}
-
-/*
-  Esta función crea/elimina la red en docker
-    - action: create o remove
-    - timeInSeconds: número que se genera para darle un nombre &quot;único&quot; a los recursos
-*/
-def dockerNetwork(action, timeInSeconds) {
-  switch(action) {
-    case &apos;create&apos;:
-      stage(&apos;Create Docker Network&apos;) {
-        sh &quot;docker network create aws-${timeInSeconds}&quot;
-      }
-      break;
-    case &apos;remove&apos;:
-      stage(&apos;Remove Docker Network&apos;) {
-        sh &quot;docker network remove aws-${timeInSeconds}&quot;
-      }
-      break;
-  }
-}
-
-/*
-  Esta función crea/elimina el contenedor con el entorno de build
-    - action: create o remove
-    - timeInSeconds: número que se genera para darle un nombre &quot;único&quot; a los recursos
-    - doTests: si vamos a hacer tests linkeamos el container de dynamodb
-*/
-def pythonBuildEnv(action, timeInSeconds, doTests) {
-  switch(action) {
-    case &apos;create&apos;:
-      stage(&apos;Create Build Environment&apos;) {
-        if (doTests) {
-          sh &quot;docker container run --name python-env-${timeInSeconds} --link dynamodb-${timeInSeconds}:dynamodb --network aws-${timeInSeconds} -di -v /var/run/docker.sock:/var/run/docker.sock -v \${HOME}/.aws:/home/builduser/.aws -v \${PWD}:\${PWD} ${ECR_PYTHON}&quot;
-        } else {
-          sh &quot;docker container run --name python-env-${timeInSeconds} --network aws-${timeInSeconds} -di -v /var/run/docker.sock:/var/run/docker.sock -v \${HOME}/.aws:/home/builduser/.aws -v \${PWD}:\${PWD} ${ECR_PYTHON}&quot;
-        }
-      }
-      break;
-    case &apos;remove&apos;:
-      stage(&apos;Remove Build Environment&apos;) {
-        sh &quot;docker container rm -f python-env-${timeInSeconds}&quot;
-      }
-      break;
-  }
-}
-
-/*
-  Esta función crea/elimina el contenedor de dynamodb
-    - action: create o remove
-    - timeInSeconds: número que se genera para darle un nombre &quot;único&quot; a los recursos
-    - doTests: sólo iniciaremos dynamodb si necesitamos hacer tests
-*/
-def localDynamo(action, timeInSeconds, doTests) {
-  switch(action) {
-    case &apos;create&apos;:
-      stage(&apos;Create local dynamodb&apos;) {
-        if (doTests) {
-          sh &quot;docker container run -d --network aws-${timeInSeconds} --name dynamodb-${timeInSeconds} --rm amazon/dynamodb-local&quot;
-        } else {
-          echo &quot;Este entorno no ejecutará tests, por lo que no es necesario iniciar DynamoDB-Local&quot;
-        }
-      }
-      break;
-    case &apos;remove&apos;:
-      stage(&apos;Remove local dynamodb&apos;) {
-        if (doTests) {
-          sh &quot;docker container rm -f dynamodb-${timeInSeconds}&quot;
-        } else {
-          echo &quot;Este entorno no ejecutó tests, por lo que no es necesario detener DynamoDB-Local (No iniciado)&quot;
-        }
-      }
-      break;
-  }
-}
-
-/*
-  Esta función se utiliza para lanzar las distintas pruebas
-    - timeInSeconds: número que se genera para darle un nombre &quot;único&quot; a los recursos
-    - doLocal: para saber si estamos trabajando en un entorno local
-    - doTests: sólo lanzaremos las pruebas que así lo requieran
-    - testCase: static, unittest o integration
-*/
-def testApp(timeInSeconds, doLocal, doTests, testCase) {
-  switch(testCase) {
-    case &apos;static&apos;:
-      stage(&apos;Run tests 1/2 - Static tests&apos;) {
-        if (doTests) {
-          sh &quot;docker container exec -i python-env-${timeInSeconds} /opt/todo-list-aws/tests/run_tests.sh&quot;
-        } else {
-          echo &quot;Este entorno no ejecutará tests&quot;
-        }
-      }
-      break;
-    case &apos;unittest&apos;:
-      stage(&apos;Run tests 2/2 - unittest&apos;) {
-        if (doTests) {
-          sh &quot;docker container exec -i python-env-${timeInSeconds} /opt/todo-list-aws/tests/run_unittest.sh&quot;
-        } else {
-          echo &quot;Este entorno no ejecutará tests&quot;
-        }
-      }
-      break;
-    case &apos;integration&apos;:
-      stage(&apos;Run integration tests&apos;) {
-        if (doLocal) {
-          sh &quot;docker container exec -w \${PWD} -i python-env-${timeInSeconds} /opt/todo-list-aws/tests/run_integration.sh ${stackName}&quot;
-        } else {
-          sh &quot;docker container exec -w \${PWD} -i python-env-${timeInSeconds} /opt/todo-list-aws/tests/run_integration.sh ${stackName}&quot;
-        }
-      }
-  }
-}
-
-/*
-  Esta función se utiliza para crear un symlink en el entorno de build para trabajar en /opt/todo-list-aws
-    - timeInSeconds: número que se genera para darle un nombre &quot;único&quot; a los recursos
-    - source: Directorio de origen (/var/lib/jenkins/wokspace/...)
-    - destination: Directorio de destino (/opt/todo-list-aws)
-*/
-def linkDirectory(timeInSeconds, source, destination) {
-  sh &quot;docker container exec -u root python-env-${timeInSeconds} ln -sf ${source} ${destination}&quot;
-}
-
-/*
-  Esta función se utiliza para iniciar local-api
-    - timeInSeconds: número que se genera para darle un nombre &quot;único&quot; a los recursos
-    - doTests: sólo iniciaremos local-api si necesitamos hacer tests
-*/
-def startLocalApi(timeInSeconds, doTests) {
-  stage(&quot;Start sam local-api&quot;) {
-    if (doTests) {
-      sh &quot;docker container exec -d -w \${PWD} python-env-${timeInSeconds} sed -i &apos;s/timeInSeconds/${timeInSeconds}/g&apos; todos/todoTableClass.py&quot;
-      sh &quot;docker container exec -d -w \${PWD} python-env-${timeInSeconds} /home/builduser/.local/bin/sam local start-api --region us-east-1 --host 0.0.0.0 --port 8080 --debug --docker-network aws-${timeInSeconds} --docker-volume-basedir \${PWD}&quot;
-      // Wait 10 seconds for api to start
-      sleep 10
-    } else {
-      echo &quot;Este entorno no ejecutará tests, por lo que no es necesario iniciar local-api&quot;
-    }
-  }
-}
-
-/*
-  Esta función se utiliza para construir la app
-    - timeInSeconds: número que se genera para darle un nombre &quot;único&quot; a los recursos
-    - doLocal: para saber si estamos trabajando en un entorno local
-    - stackName: para trabajar sobre un stack de CloudFormation
-*/
-def buildApp(timeInSeconds, doLocal, stackName) {
-  stage(&apos;Build application&apos;) {
-    if (!doLocal) {
-      sh &quot;docker container exec -i -w \${PWD} python-env-${timeInSeconds} /home/builduser/.local/bin/sam build --region us-east-1 --debug --docker-network aws-${timeInSeconds} --parameter-overrides EnvironmentType=${stackName}&quot;
-    } else {
-      echo &quot;No construiremos la app en un entorno local&quot;
-    }
-  }
-}
-
-/*
-  Después de construir la app validamos si el template funciona
-    - timeInSeconds: número que se genera para darle un nombre &quot;único&quot; a los recursos
-    - doLocal: para saber si estamos trabajando en un entorno local
-*/
-def validateApp(timeInSeconds, doLocal) {
-  stage(&apos;Validate cloudformation template&apos;) {
-    if (!doLocal) {
-      sh &quot;docker container exec -i -w \${PWD} python-env-${timeInSeconds} /home/builduser/.local/bin/aws cloudformation validate-template --template-body file://.aws-sam/build/template.yaml&quot;
-    } else {
-      echo &quot;No hemos construido una app para validar en un entorno local&quot;
-    }
-  }
-}
-
-/*
-  Esta función despliega SAM
-    - timeInSeconds: número que se genera para darle un nombre &quot;único&quot; a los recursos
-    - doLocal: para saber si estamo trabajando en un entorno local
-    - stackName: para trabajar sobre un stack de CloudFormation
-*/
-def deployApp(timeInSeconds, doLocal, stackName) {
-  stage(&apos;Deploy application&apos;) {
-    if (!doLocal) {
-      sh &quot;docker container exec -i -w \${PWD} python-env-${timeInSeconds} /home/builduser/.local/bin/sam deploy --region us-east-1 --debug --force-upload --stack-name todo-list-aws-${stackName} --debug --s3-bucket ${s3bucket} --capabilities CAPABILITY_NAMED_IAM --parameter-overrides EnvironmentType=${stackName}&quot;
-    } else {
-      echo &quot;No hemos construído ni validado la app en un entorno local para desplegar&quot;
-    }
-  }
-}
-
-/*
-  Función utilizada para hacer debug de errores
-    - e: string de excepción
-*/
-def printFailure(e) {
-  println &quot;Failed because of $e&quot;
-}
-
-
-/*
-  Comienzo del pipeline
-*/
-node {
-  // Limpiamos el entorno
-  cleanUp(true)
-
-  // Obtenemos la última versión del código desde Git
-  stage(&apos;Checkout&apos;) {
-    echo &apos;Checkout SCM&apos;
-    git branch: &quot;${ENVIRONMENT}&quot;,
-          credentialsId: &quot;${CODECOMMIT_ID}&quot;,
-          url: &quot;${GIT_REPO}&quot;
-  }
-
-  // Descargamos las imágenes de docker que vamos a utilizar
-  stage(&apos;Pull docker images&apos;) {
-    sh &quot;docker image pull ${ECR_PYTHON}&quot;
-    sh &quot;docker image pull amazon/dynamodb-local&quot;
-  }
-
-  try {
-    // Creamos la red de docker
-    dockerNetwork(&apos;create&apos;, timeInSeconds)
-    try {
-      // Iniciamos dynamodb-local
-      localDynamo(&apos;create&apos;, timeInSeconds, doTests)
-
-      try {
-        // Iniciamos nuestro entorno de build
-        pythonBuildEnv(&apos;create&apos;, timeInSeconds, doTests)
-
-        try {
-          // Creamos symlink del directorio
-          linkDirectory(timeInSeconds, WORKSPACE, &quot;/opt/todo-list-aws&quot;)
-
-          // Testeamos el código y realizmos unittests
-          testApp(timeInSeconds, doLocal, doTests, &apos;static&apos;)
-          testApp(timeInSeconds, doLocal, doTests, &apos;unittest&apos;)
-
-          // Iniciamos local-api
-          startLocalApi(timeInSeconds, doTests)
-
-          try {
-            // Construimos, validamos y desplegamos la app
-            buildApp(timeInSeconds, doLocal, stackName)
-            validateApp(timeInSeconds, doLocal)
-            deployApp(timeInSeconds, doLocal, stackName)
-          } catch(da) {
-            // Fallo al construir o desplegar la app
-            printFailure(da)
-            currentBuild.result = &quot;FAILURE&quot;
-          }
-
-          // Realizamos integration test
-          testApp(timeInSeconds, doLocal, doTests, &apos;integration&apos;)
-        } catch(r) {
-          // Si Algo falló mostramos un error
-          printFailure(r)
-          currentBuild.result = &quot;FAILURE&quot;
-        } finally {
-          // Siempre eliminamos el entorno de build
-          pythonBuildEnv(&apos;remove&apos;, timeInSeconds, doLocal)
-        }
-
-      } catch(ld) {
-        // Si no pudimos iniciar el entorno de build mostramos error
-        printFailure(ld)
-        currentBuild.result = &quot;FAILURE&quot;
-      } finally {
-        // Siempre eliminamos dynamodb-local
-        localDynamo(&apos;remove&apos;, timeInSeconds, doTests)
-      }
-
-    } catch(be) {
-      // Si no pudimos iniciar dynamodb-local mostramos error
-      printFailure(be)
-      currentBuild.result = &quot;FAILURE&quot;
-    } finally {
-      // Siempre eliminamos la red de docker
-      dockerNetwork(&apos;remove&apos;, timeInSeconds)
-    }
-
-  } catch(dn) {
-    // Si no pudimos iniciar la red de docker mostramos un error
-    printFailure(dn)
-    currentBuild.result = &quot;FAILURE&quot;
-  }
-
-  // Limpiamos el entorno
-  cleanUp(false)
-}
-</script>
-    <sandbox>true</sandbox>
+  <definition class="org.jenkinsci.plugins.workflow.cps.CpsScmFlowDefinition" plugin="workflow-cps@2.87">
+    <scm class="hudson.plugins.git.GitSCM" plugin="git@4.5.1">
+      <configVersion>2</configVersion>
+      <userRemoteConfigs>
+        <hudson.plugins.git.UserRemoteConfig>
+          <refspec>+refs/pull/*:refs/remotes/origin/pr/*</refspec>
+          <url>codecommit_todo_list_repo</url>
+          <credentialsId>codecommit</credentialsId>
+        </hudson.plugins.git.UserRemoteConfig>
+      </userRemoteConfigs>
+      <branches>
+        <hudson.plugins.git.BranchSpec>
+          <name>origin/staging</name>
+        </hudson.plugins.git.BranchSpec>
+      </branches>
+      <doGenerateSubmoduleConfigurations>false</doGenerateSubmoduleConfigurations>
+      <submoduleCfg class="list"/>
+      <extensions>
+        <hudson.plugins.git.extensions.impl.WipeWorkspace/>
+        <hudson.plugins.git.extensions.impl.CleanBeforeCheckout>
+          <deleteUntrackedNestedRepositories>true</deleteUntrackedNestedRepositories>
+        </hudson.plugins.git.extensions.impl.CleanBeforeCheckout>
+      </extensions>
+    </scm>
+    <scriptPath>Jenkinsfile</scriptPath>
+    <lightweight>false</lightweight>
   </definition>
   <triggers/>
   <disabled>false</disabled>

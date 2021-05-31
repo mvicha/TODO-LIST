@@ -20,13 +20,31 @@
           <defaultValue>codecommit</defaultValue>
           <trim>false</trim>
         </hudson.model.StringParameterDefinition>
+        <hudson.model.StringParameterDefinition>
+          <name>ECR_DEST</name>
+          <description></description>
+          <defaultValue>dkr_python_env_url</defaultValue>
+          <trim>false</trim>
+        </hudson.model.StringParameterDefinition>
+        <hudson.model.StringParameterDefinition>
+          <name>GIT_REPO</name>
+          <description></description>
+          <defaultValue>codecommit_python_env</defaultValue>
+          <trim>false</trim>
+        </hudson.model.StringParameterDefinition>
+        <hudson.model.StringParameterDefinition>
+          <name>GIT_BRANCH</name>
+          <description></description>
+          <defaultValue>master</defaultValue>
+          <trim>false</trim>
+        </hudson.model.StringParameterDefinition>
       </parameterDefinitions>
     </hudson.model.ParametersDefinitionProperty>
   </properties>
   <definition class="org.jenkinsci.plugins.workflow.cps.CpsFlowDefinition" plugin="workflow-cps@2.87">
-    <script>String gitRepo = &quot;codecommit_python_env&quot;
-String branchName = &quot;master&quot;
-String ecrDest = &quot;dkr_python_env_url&quot;
+    <script>String gitRepo = &quot;${env.GIT_REPO}&quot;
+String branchName = &quot;${env.GIT_BRANCH}&quot;
+String ecrDest = &quot;${env.ECR_DEST}&quot;
 String credentialsId = &quot;${env.CODECOMMIT_ID}&quot;
 
 
